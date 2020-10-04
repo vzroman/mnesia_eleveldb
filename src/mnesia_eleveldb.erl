@@ -1531,11 +1531,12 @@ decr(I) when is_integer(I) ->
 decr(infinity) ->
     infinity.
 
-traverse_continue(K, 0, Pfx, MS, _I, #sel{limit = Limit, ref = Ref} = Sel, AccKeys, Acc) ->
+traverse_continue(K, 0, Pfx, MS, _I, #sel{limit = Limit, ref = _Ref} = Sel, AccKeys, Acc) ->
     {lists:reverse(Acc),
       % The key is put explicitly in the continuation to make it more controllable
       % on intervals scanning. The fun accepts a key from which to continue
      {K,fun(Start) ->
+       Ref=get_ref(Sel#sel.alias,Sel#sel.tab),
 	     with_iterator(Ref,
 			   fun(NewI) ->
                                    select_traverse(iterator_next(NewI, Start),
