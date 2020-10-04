@@ -772,9 +772,9 @@ select(Cont) ->
     %% older versions of mnesia_ext (before OTP 20).
     case Cont of
         {_, '$end_of_table'} -> '$end_of_table';
-        {_, {Key,Cont1}}           -> Cont1(Key);
+        {_, {Key,Limit,Cont1}}           -> Cont1(Key,Limit);
         '$end_of_table'      -> '$end_of_table';
-        {Key,Cont1}                   -> Cont1(Key)
+        {Key,Limit,Cont1}                   -> Cont1(Key,Limit)
     end.
 
 select(Alias, Tab, Ms) ->
@@ -1535,7 +1535,7 @@ traverse_continue(K, 0, Pfx, MS, _I, #sel{limit = Limit, ref = Ref} = Sel, AccKe
     {lists:reverse(Acc),
       % The key is put explicitly in the continuation to make it more controllable
       % on intervals scanning. The fun accepts a key from which to continue
-     {decode_key(K),fun(Start) ->
+     {decode_key(K),Limit,fun(Start,Limit) ->
 
 	     with_iterator(Ref,
 			   fun(NewI) ->
