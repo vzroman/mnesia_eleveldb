@@ -497,11 +497,10 @@ do_delete_table(Tab, MP) ->
 
 
 info(_Alias, Tab, memory) ->
-    try ets:info(tab_name(icache, Tab), memory)
-    catch
-        error:_ ->
-            0
-    end;
+  Dir = data_mountpoint(Tab),
+  filelib:fold_files(Dir,".*",true,fun(F,Acc)->
+    Acc+filelib:file_size(F)
+  end,0);
 info(Alias, Tab, size) ->
     case retrieve_size(Alias, Tab) of
 	{ok, Size} ->
