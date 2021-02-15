@@ -1534,12 +1534,12 @@ traverse_continue(K, 0, Pfx, MS, _I, #sel{limit = Limit, ref = Ref} = Sel, AccKe
     {lists:reverse(Acc),
       % The key is put explicitly in the continuation to make it more controllable
       % on intervals scanning. The fun accepts a key from which to continue
-     {decode_key(K),Limit,fun(Start,Limit) ->
+     {decode_key(K),Limit,fun(Start,LimitAcc) ->
 
 	     with_iterator(Ref,
 			   fun(NewI) ->
                                    select_traverse(iterator_next(NewI, encode_key(Start)),
-                                                   Limit, Pfx, MS, NewI, Sel,
+                                                   LimitAcc, Pfx, MS, NewI, Sel,
                                                    AccKeys, [])
 			   end)
      end}};
