@@ -932,8 +932,12 @@ do_load_table(Tab, LdbOpts) ->
     {ok, Ref, Ets}.
 
 handle_call({load, Alias, Tab, Type, LdbOpts}, _From,
-            #st{type = Type, alias = Alias, tab = Tab} = St) ->
+            #st{type = Type, alias = Alias, tab = Tab,record_name = RecName} = St) ->
     {ok, Ref, Ets} = do_load_table(Tab, LdbOpts),
+
+  % get_ref optimization
+  register_ref({ref,Alias, Tab},{Ref, Type, RecName}),
+
     {reply, ok, St#st{ref = Ref, ets = Ets}};
 handle_call(get_ref, _From, #st{ref = Ref, type = Type, record_name = RecName} = St) ->
     {reply, {Ref, Type, RecName}, St};
