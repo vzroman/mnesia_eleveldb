@@ -892,6 +892,11 @@ start_proc(Alias, Tab, Type, LdbOpts, RecName) ->
 init({Alias, Tab, Type, LdbOpts, RecName}) ->
     process_flag(trap_exit, true),
     {ok, Ref, Ets} = do_load_table(Tab, LdbOpts),
+
+    % get_ref optimization
+    fp:log(info,"SET REF ~p",[{ref,Alias, Tab}]),
+    true = mnesia_eleveldb_params:store({ref,Alias, Tab},{Ref, Type, RecName}),
+
     St = #st{ ets = Ets
 	    , ref = Ref
 	    , alias = Alias
@@ -981,7 +986,8 @@ handle_info(_, St) ->
 code_change(_FromVsn, St, _Extra) ->
     {ok, St}.
 
-terminate(_Reason, #st{ref = Ref}) ->
+terminate(_Reason, #st{ref = Ref,alias=Alias,tab=Tab}) ->
+    mnesia_eleveldb_params:delete({ref,Alias, Tab}),
     if Ref =/= undefined ->
 	    ?leveldb:close(Ref);
        true -> ok
@@ -1499,9 +1505,10 @@ select_traverse({ok, K, V}, Limit, Pfx, MS, I, #sel{tab = Tab, record_name = Rec
 	    Rec = set_record(keypos(Tab), decode_val(V), decode_key(K), RecName),
 	    case ets:match_spec_run([Rec], MS) of
 		[] ->
-		    select_traverse(
-		      ?leveldb:iterator_move(I, next), Limit, Pfx, MS,
-		      I, Sel, AccKeys, Acc);
+            % select_traverse(
+		    %   ?leveldb:iterator_move(I, next), Limit, Pfx, MS,
+		    %   I, Sel, AccKeys, Acc);
+            traverse_continue(K, 0, Pfx, MS, I, Sel, AccKeys, Acc);
 		[Match] ->
                     Acc1 = if AccKeys ->
                                    [{K, Match}|Acc];
@@ -1710,7 +1717,13 @@ is_retainer_dir(F, TabS) ->
     end.
 
 get_ref(Alias, Tab) ->
-    call(Alias, Tab, get_ref).
+  % get_ref optimization
+  case mnesia_eleveldb_params:lookup({ref,Alias, Tab},undefined) of
+    undefined-> 
+        fp:log(info,"ref undef ~p",[{ref,Alias,Tab}]),
+        call(Alias, Tab, get_ref);
+    Result->Result
+  end.
 
 fold(Alias, Tab, Fun, Acc, MS, N) ->
     {Ref, Type, RecName} = get_ref(Alias, Tab),
