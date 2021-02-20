@@ -22,7 +22,9 @@
 
 -export([lookup/2,
          store/2,
-         delete/1]).
+         delete/1,
+         is_store_ready/0
+  ]).
 
 -export([start_link/0,
          init/1,
@@ -69,6 +71,12 @@ start_link() ->
             ok
     end,
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+is_store_ready()->
+  case ets:info(?MODULE, name) of
+    undefined -> false;
+    _ -> true
+  end.
 
 init(_) ->
     {ok, []}.

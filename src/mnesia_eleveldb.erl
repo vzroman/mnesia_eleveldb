@@ -638,7 +638,12 @@ insert(Alias, Tab, Obj) ->
     Pos = keypos(Tab),
     EncKey = encode_key(element(Pos, Obj)),
     EncVal = encode_val(set_record(Pos, Obj, [], [])),
-    call(Alias, Tab, {insert, EncKey, EncVal}).
+
+  % TEST! Is the write thread-safe???
+  % call(Alias, Tab, {insert, EncKey, EncVal}).
+  {Ref, _Type, _RecName} = get_ref(Alias, Tab),
+  ?leveldb:put(Ref, EncKey, EncVal, []).
+
 
 last(Alias, Tab) ->
     {Ref, _Type, _RecName} = get_ref(Alias, Tab),
@@ -894,8 +899,7 @@ init({Alias, Tab, Type, LdbOpts, RecName}) ->
     {ok, Ref, Ets} = do_load_table(Tab, LdbOpts),
 
     % get_ref optimization
-    fp:log(info,"SET REF ~p",[{ref,Alias, Tab}]),
-    true = mnesia_eleveldb_params:store({ref,Alias, Tab},{Ref, Type, RecName}),
+    register_ref({ref,Alias, Tab},{Ref, Type, RecName}),
 
     St = #st{ ets = Ets
 	    , ref = Ref
@@ -907,6 +911,17 @@ init({Alias, Tab, Type, LdbOpts, RecName}) ->
 	    , maintain_size = should_maintain_size(Tab)
 	    },
     {ok, recover_size_info(St)}.
+
+register_ref(Key,Value)->
+  case mnesia_eleveldb_params:is_store_ready() of
+    true->mnesia_eleveldb_params:store(Key,Value);
+    _->
+      receive
+      after
+        10->register_ref(Key,Value)
+      end
+  end.
+
 
 do_load_table(Tab, LdbOpts) ->
     MPd = data_mountpoint(Tab),
@@ -1505,10 +1520,12 @@ select_traverse({ok, K, V}, Limit, Pfx, MS, I, #sel{tab = Tab, record_name = Rec
 	    Rec = set_record(keypos(Tab), decode_val(V), decode_key(K), RecName),
 	    case ets:match_spec_run([Rec], MS) of
 		[] ->
-            % select_traverse(
-		    %   ?leveldb:iterator_move(I, next), Limit, Pfx, MS,
-		    %   I, Sel, AccKeys, Acc);
-            traverse_continue(K, 0, Pfx, MS, I, Sel, AccKeys, Acc);
+      % IMPORTANT! Only for DLSS purposes.
+      % DLSS uses scanning a storage from key1 to key2. If the record
+      % does not match the spec then it is out of range already.
+      % It is not suitable for other than Start =< Key, Key =< End
+      % specifications
+      traverse_continue(K, 0, Pfx, MS, I, Sel, AccKeys, Acc);
 		[Match] ->
                     Acc1 = if AccKeys ->
                                    [{K, Match}|Acc];
