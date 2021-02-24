@@ -124,7 +124,7 @@
 
 % DLSS only optimization API
 -export([
-  split/4
+  split/5
 ]).
 
 %% ----------------------------------------------------------------------------
@@ -775,7 +775,7 @@ i_move_to_prev(I, Key) ->
 repair_continuation(Cont, _Ms) ->
     Cont.
 
-split( Tab1, Tab2, ToSize, BatchSize )->
+split( Tab1, Tab2, ToSize, BatchSize ,OnBatch)->
   {ext, Alias1, _} = mnesia_lib:storage_type_at_node( node(), Tab1 ),
   {ext, Alias2, _} = mnesia_lib:storage_type_at_node( node(), Tab2 ),
   {Ref1, Type, RecName} = get_ref(Alias1, Tab1),
@@ -783,8 +783,9 @@ split( Tab1, Tab2, ToSize, BatchSize )->
 
   Deleted = encode_val( '@deleted@' ),
   Size =
-    fun()->
+    fun(Key)->
       T2Size = info(Alias2, Tab2, memory),
+      OnBatch( Key, ToSize ),
       T2Size >= ToSize
     end,
   with_iterator( Ref1, fun(I)->
@@ -793,7 +794,7 @@ split( Tab1, Tab2, ToSize, BatchSize )->
 
 do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, BatchSize, Size, Batch ) when N rem BatchSize=:=0->
   drop_batch( Ref1, Ref2, Deleted, lists:reverse([{K,V}|Batch]) ),
-  case Size() of
+  case Size( decode_key(K) ) of
     true->ok;
     _->
       do_split( ?leveldb:iterator_move(I, next), Ref1, Ref2, Deleted, I, N+1, BatchSize, Size, [] )
