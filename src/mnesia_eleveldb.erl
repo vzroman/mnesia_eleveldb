@@ -786,7 +786,7 @@ split( {Alias1,Tab1}, {Alias2,Tab2}, ToSize )->
       T2Size >= ToSize
     end,
   with_iterator( Ref1, fun(I)->
-    do_split( ?leveldb:iterator_move(I, <<?DATA_START>>), Ref1, Ref2, Deleted, I, 0, Size, _Batch = [] )
+    do_split( iterator_next(I, <<?DATA_START>>), Ref1, Ref2, Deleted, I, 0, Size, _Batch = [] )
   end).
 
 do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, Size, Batch ) when N >= 100000->
@@ -794,10 +794,10 @@ do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, Size, Batch ) when N >= 100000-
   case Size() of
     true->ok;
     _->
-      do_split( ?leveldb:iterator_move(I, K), Ref1, Ref2, Deleted, I, 0, Size, [] )
+      do_split( iterator_next(I, K), Ref1, Ref2, Deleted, I, 0, Size, [] )
   end;
 do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, Size, Batch )->
-  do_split( ?leveldb:iterator_move(I, K), Ref1, Ref2, Deleted, I, N+1, Size, [{K,V}|Batch] );
+  do_split( iterator_next(I, K), Ref1, Ref2, Deleted, I, N+1, Size, [{K,V}|Batch] );
 do_split( {error, _}, Ref1, Ref2, Deleted, _I, _N, _To, Batch )->
   drop_batch( Ref1, Ref2, Deleted, lists:reverse(Batch) ).
 
