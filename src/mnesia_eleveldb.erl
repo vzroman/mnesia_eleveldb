@@ -124,7 +124,7 @@
 
 % DLSS only optimization API
 -export([
-  split/3
+  split/4
 ]).
 
 %% ----------------------------------------------------------------------------
@@ -775,7 +775,9 @@ i_move_to_prev(I, Key) ->
 repair_continuation(Cont, _Ms) ->
     Cont.
 
-split( {Alias1,Tab1}, {Alias2,Tab2}, ToSize )->
+split( Tab1, Tab2, ToSize, BatchSize )->
+  {ext, Alias1, _} = mnesia_lib:storage_type_at_node( node(), Tab1 ),
+  {ext, Alias2, _} = mnesia_lib:storage_type_at_node( node(), Tab2 ),
   {Ref1, Type, RecName} = get_ref(Alias1, Tab1),
   {Ref2, Type, RecName} = get_ref(Alias2, Tab2),
 
@@ -786,19 +788,19 @@ split( {Alias1,Tab1}, {Alias2,Tab2}, ToSize )->
       T2Size >= ToSize
     end,
   with_iterator( Ref1, fun(I)->
-    do_split( iterator_next(I, <<?DATA_START>>), Ref1, Ref2, Deleted, I, 0, Size, _Batch = [] )
+    do_split( iterator_next(I, <<?DATA_START>>), Ref1, Ref2, Deleted, I, 0, BatchSize, Size, _Batch = [] )
   end).
 
-do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, Size, Batch ) when N >= 100000->
+do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, BatchSize, Size, Batch ) when N rem BatchSize=:=0->
   drop_batch( Ref1, Ref2, Deleted, lists:reverse([{K,V}|Batch]) ),
   case Size() of
     true->ok;
     _->
-      do_split( iterator_next(I, K), Ref1, Ref2, Deleted, I, 0, Size, [] )
+      do_split( ?leveldb:iterator_move(I, next), Ref1, Ref2, Deleted, I, N+1, BatchSize, Size, [] )
   end;
-do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, Size, Batch )->
-  do_split( iterator_next(I, K), Ref1, Ref2, Deleted, I, N+1, Size, [{K,V}|Batch] );
-do_split( {error, _}, Ref1, Ref2, Deleted, _I, _N, _To, Batch )->
+do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, BatchSize, Size, Batch )->
+  do_split( ?leveldb:iterator_move(I, next), Ref1, Ref2, Deleted, I, N+1, BatchSize, Size, [{K,V}|Batch] );
+do_split( {error, _}, Ref1, Ref2, Deleted, _I, _N, _BatchSize, _To, Batch )->
   drop_batch( Ref1, Ref2, Deleted, lists:reverse(Batch) ).
 
 drop_batch( Ref1, Ref2, Deleted, Batch )->
