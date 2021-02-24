@@ -122,6 +122,10 @@
 
 -export([ix_prefixes/3]).
 
+% DLSS only optimization API
+-export([
+  split/3
+]).
 
 %% ----------------------------------------------------------------------------
 %% DEFINES
@@ -770,6 +774,43 @@ i_move_to_prev(I, Key) ->
 
 repair_continuation(Cont, _Ms) ->
     Cont.
+
+split( {Alias1,Tab1}, {Alias2,Tab2}, ToSize )->
+  {Ref1, Type, RecName} = get_ref(Alias1, Tab1),
+  {Ref2, Type, RecName} = get_ref(Alias2, Tab2),
+
+  Deleted = encode_val( '@deleted@' ),
+  Size =
+    fun()->
+      T2Size = info(Alias2, Tab2, memory),
+      T2Size >= ToSize
+    end,
+  with_iterator( Ref1, fun(I)->
+    do_split( iterator_next(I, <<?DATA_START>>), Ref1, Ref2, Deleted, I, 0, Size, _Batch = [] )
+  end).
+
+do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, Size, Batch ) when N >= 100000->
+  drop_batch( Ref1, Ref2, Deleted, lists:reverse([{K,V}|Batch]) ),
+  case Size() of
+    true->ok;
+    _->
+      do_split( iterator_next(I, K), Ref1, Ref2, Deleted, I, 0, Size, [] )
+  end;
+do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, Size, Batch )->
+  do_split( iterator_next(I, K), Ref1, Ref2, Deleted, I, N+1, Size, [{K,V}|Batch] );
+do_split( {error, _}, Ref1, Ref2, Deleted, _I, _N, _To, Batch )->
+  drop_batch( Ref1, Ref2, Deleted, lists:reverse(Batch) ).
+
+drop_batch( Ref1, Ref2, Deleted, Batch )->
+  Del = [ {delete, K} || {K,_V} <- Batch ],
+  Write = [ {put, K, V} || {K, V}<-Batch, V=/=Deleted ],
+
+  ?leveldb:write(Ref2, Write, []),
+  ?leveldb:write(Ref1, Del, []),
+
+  ok.
+
+
 
 select(Cont) ->
     %% Handle {ModOrAlias, Cont} wrappers for backwards compatibility with
