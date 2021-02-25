@@ -783,24 +783,24 @@ split( Tab1, Tab2, ToSize, BatchSize ,OnBatch)->
 
   Deleted = encode_val( '@deleted@' ),
   Size =
-    fun(Key)->
-      T2Size = info(Alias2, Tab2, memory),
+    fun(NSize,Key)->
+      %T2Size = info(Alias2, Tab2, memory),
       OnBatch( Key, ToSize ),
-      T2Size >= ToSize
+      NSize >= ToSize
     end,
   with_iterator( Ref1, fun(I)->
     do_split( iterator_next(I, <<?DATA_START>>), Ref1, Ref2, Deleted, I, 0, BatchSize, Size, _Batch = [] )
   end).
 
-do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, BatchSize, Size, Batch ) when N rem BatchSize=:=0->
+do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, BatchSize, Size, Batch ) when N >= BatchSize->
   drop_batch( Ref1, Ref2, Deleted, lists:reverse([{K,V}|Batch]) ),
-  case Size( decode_key(K) ) of
+  case Size(N, decode_key(K) ) of
     true->ok;
     _->
-      do_split( ?leveldb:iterator_move(I, next), Ref1, Ref2, Deleted, I, N+1, BatchSize, Size, [] )
+      do_split( ?leveldb:iterator_move(I, next), Ref1, Ref2, Deleted, I, N+record_size(K,V), BatchSize, Size, [] )
   end;
 do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, BatchSize, Size, Batch )->
-  do_split( ?leveldb:iterator_move(I, next), Ref1, Ref2, Deleted, I, N+1, BatchSize, Size, [{K,V}|Batch] );
+  do_split( ?leveldb:iterator_move(I, next), Ref1, Ref2, Deleted, I, N+record_size(K,V), BatchSize, Size, [{K,V}|Batch] );
 do_split( {error, _}, Ref1, Ref2, Deleted, _I, _N, _BatchSize, _To, Batch )->
   drop_batch( Ref1, Ref2, Deleted, lists:reverse(Batch) ).
 
@@ -812,6 +812,8 @@ drop_batch( Ref1, Ref2, Deleted, Batch )->
   ?leveldb:write(Ref1, Del, []),
 
   ok.
+record_size(K,V)->
+  byte_size(K)+byte_size(V).
 
 
 
