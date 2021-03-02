@@ -796,9 +796,9 @@ repair_continuation(Cont, _Ms) ->
 % All operations are performed with encoded
 % keys and values (use encode/decode helpers yourself)
 %=====================================================================
-dirty_iterator( Tab, Fun )->
-  dirty_iterator( Tab, Fun, '$start_of_table' ).
-dirty_iterator( Tab, Fun, FromKey )->
+dirty_iterator( Tab, Fun, Acc )->
+  dirty_iterator( Tab, Fun, Acc, '$start_of_table' ).
+dirty_iterator( Tab, Fun, Acc, FromKey )->
 
   % Preparation
   {ext, Alias, _} = mnesia_lib:storage_type_at_node( node(), Tab ),
@@ -813,18 +813,18 @@ dirty_iterator( Tab, Fun, FromKey )->
         true ->
           ?leveldb:iterator_move(I, FromKey)
       end,
-    dirty_iterator( Start , I, Ref, Fun )
+    dirty_iterator_loop( Start , I, Fun, Acc )
   end).
 
-dirty_iterator( {ok, K, V} , I, Ref, Fun )->
-  case Fun( {K, V}, Ref ) of
-    next->
-      dirty_iterator( ?leveldb:iterator_move(I, next), I, Ref, Fun );
-    _->
-      ok
+dirty_iterator_loop( {ok, K, V} , I, Fun, Acc )->
+  case Fun( {K, V}, Acc ) of
+    stop->
+      Acc;
+    Acc1->
+      dirty_iterator_loop( ?leveldb:iterator_move(I, next), I, Fun, Acc1 )
   end;
-dirty_iterator( {error, _} , _I, Ref, Fun )->
-  Fun( '$end_of_table', Ref ).
+dirty_iterator_loop( {error, _} , _I, Fun, Acc )->
+  Fun( '$end_of_table', Acc ).
 
 bulk_insert( Tab, Records )->
 
