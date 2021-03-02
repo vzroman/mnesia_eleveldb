@@ -129,7 +129,7 @@
 % keys and values (use encode/decode helpers yourself)
 %====================================================================
 -export([
-  dirty_iterator/2,dirty_iterator/3,
+  dirty_iterator/3,dirty_iterator/4,
 
   bulk_insert/2,
   bulk_delete/2
