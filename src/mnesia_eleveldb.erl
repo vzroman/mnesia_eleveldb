@@ -129,7 +129,7 @@
 % keys and values (use encode/decode helpers yourself)
 %====================================================================
 -export([
-  dirty_iterator/2,
+  dirty_iterator/2,dirty_iterator/3,
 
   bulk_insert/2,
   bulk_delete/2
@@ -797,6 +797,8 @@ repair_continuation(Cont, _Ms) ->
 % keys and values (use encode/decode helpers yourself)
 %=====================================================================
 dirty_iterator( Tab, Fun )->
+  dirty_iterator( Tab, Fun, '$start_of_table' ).
+dirty_iterator( Tab, Fun, FromKey )->
 
   % Preparation
   {ext, Alias, _} = mnesia_lib:storage_type_at_node( node(), Tab ),
@@ -804,7 +806,14 @@ dirty_iterator( Tab, Fun )->
 
   % Run
   with_iterator( Ref, fun(I)->
-    dirty_iterator( iterator_next(I, <<?DATA_START>>) , I, Ref, Fun )
+    Start =
+      if
+        FromKey =:= '$start_of_table'->
+          iterator_next(I, <<?DATA_START>>);
+        true ->
+          ?leveldb:iterator_move(I, FromKey)
+      end,
+    dirty_iterator( Start , I, Ref, Fun )
   end).
 
 dirty_iterator( {ok, K, V} , I, Ref, Fun )->
