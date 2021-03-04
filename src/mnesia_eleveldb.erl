@@ -122,9 +122,25 @@
 
 -export([ix_prefixes/3]).
 
-% DLSS only optimization API
+%====================================================================
+% Optimized low-level mnesia-agnostic API
+% ATTENTION!!! Only for local node usage.
+% All operations are performed with encoded
+% keys and values (use encode/decode helpers yourself)
+%====================================================================
 -export([
-  split/5
+  dirty_iterator/3,dirty_iterator/4,
+
+  bulk_insert/2,
+  bulk_delete/2
+]).
+
+%====================================================================
+% Encode/Decode helpers
+%====================================================================
+-export([
+  encode_key/1,decode_key/1,
+  encode_val/1,decode_val/1
 ]).
 
 %% ----------------------------------------------------------------------------
@@ -775,42 +791,56 @@ i_move_to_prev(I, Key) ->
 repair_continuation(Cont, _Ms) ->
     Cont.
 
-split( Tab1, Tab2, ToSize, BatchSize ,OnBatch)->
-  {ext, Alias1, _} = mnesia_lib:storage_type_at_node( node(), Tab1 ),
-  {ext, Alias2, _} = mnesia_lib:storage_type_at_node( node(), Tab2 ),
-  {Ref1, Type, RecName} = get_ref(Alias1, Tab1),
-  {Ref2, Type, RecName} = get_ref(Alias2, Tab2),
+%=====================================================================
+%  Optimized low-level mnesia agnostic API
+% All operations are performed with encoded
+% keys and values (use encode/decode helpers yourself)
+%=====================================================================
+dirty_iterator( Tab, Fun, Acc )->
+  dirty_iterator( Tab, Fun, Acc, '$start_of_table' ).
+dirty_iterator( Tab, Fun, Acc, FromKey )->
 
-  Deleted = encode_val( '@deleted@' ),
-  Size =
-    fun(Key)->
-      T2Size = info(Alias2, Tab2, memory),
-      OnBatch( Key, ToSize ),
-      T2Size >= ToSize
-    end,
-  with_iterator( Ref1, fun(I)->
-    do_split( iterator_next(I, <<?DATA_START>>), Ref1, Ref2, Deleted, I, 0, BatchSize, Size, _Batch = [] )
+  % Preparation
+  {ext, Alias, _} = mnesia_lib:storage_type_at_node( node(), Tab ),
+  {Ref, _Type, _RecName} = get_ref(Alias, Tab),
+
+  % Run
+  with_iterator( Ref, fun(I)->
+    Start =
+      if
+        FromKey =:= '$start_of_table'->
+          iterator_next(I, <<?DATA_START>>);
+        true ->
+          ?leveldb:iterator_move(I, FromKey)
+      end,
+    dirty_iterator_loop( Start , I, Fun, Acc )
   end).
 
-do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, BatchSize, Size, Batch ) when N rem BatchSize=:=0->
-  drop_batch( Ref1, Ref2, Deleted, lists:reverse([{K,V}|Batch]) ),
-  case Size( decode_key(K) ) of
-    true->ok;
-    _->
-      do_split( ?leveldb:iterator_move(I, next), Ref1, Ref2, Deleted, I, N+1, BatchSize, Size, [] )
+dirty_iterator_loop( {ok, K, V} , I, Fun, Acc )->
+  case Fun( {K, V}, Acc ) of
+    stop->
+      Acc;
+    Acc1->
+      dirty_iterator_loop( ?leveldb:iterator_move(I, next), I, Fun, Acc1 )
   end;
-do_split( {ok, K, V}, Ref1, Ref2, Deleted, I, N, BatchSize, Size, Batch )->
-  do_split( ?leveldb:iterator_move(I, next), Ref1, Ref2, Deleted, I, N+1, BatchSize, Size, [{K,V}|Batch] );
-do_split( {error, _}, Ref1, Ref2, Deleted, _I, _N, _BatchSize, _To, Batch )->
-  drop_batch( Ref1, Ref2, Deleted, lists:reverse(Batch) ).
+dirty_iterator_loop( {error, _} , _I, Fun, Acc )->
+  Fun( '$end_of_table', Acc ).
 
-drop_batch( Ref1, Ref2, Deleted, Batch )->
-  Del = [ {delete, K} || {K,_V} <- Batch ],
-  Write = [ {put, K, V} || {K, V}<-Batch, V=/=Deleted ],
+bulk_insert( Tab, Records )->
 
-  ?leveldb:write(Ref2, Write, []),
-  ?leveldb:write(Ref1, Del, []),
+  {ext, Alias, _} = mnesia_lib:storage_type_at_node( node(), Tab ),
+  {Ref, _Type, _RecName} = get_ref(Alias, Tab),
 
+  Write = [ {put, K, V} || {K, V}<-Records ],
+  ?leveldb:write(Ref, Write, []),
+  ok.
+
+bulk_delete( Tab, Keys )->
+  {ext, Alias, _} = mnesia_lib:storage_type_at_node( node(), Tab ),
+  {Ref, _Type, _RecName} = get_ref(Alias, Tab),
+
+  Del = [ {delete, K} || K <- Keys ],
+  ?leveldb:write(Ref, Del, []),
   ok.
 
 
